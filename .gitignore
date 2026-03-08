@@ -1,0 +1,5 @@
+/hashbrown
+.secret/
+.env*
+*.pem
+*.key

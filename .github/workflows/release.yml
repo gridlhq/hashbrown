@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          BINARY_NAME="hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}"
+          go build -ldflags="-X main.version=${VERSION}" -o "${BINARY_NAME}" ./cmd/hashbrown/
+          shasum -a 256 "${BINARY_NAME}" > "${BINARY_NAME}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}
+            hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}.sha256
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            zig_target: x86_64-linux-musl
+          - goos: linux
+            goarch: arm64
+            zig_target: aarch64-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Zig 0.11.0
+        run: |
+          curl -L https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz | tar xJ
+          echo "${PWD}/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          CC: "zig cc -target ${{ matrix.zig_target }}"
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          BINARY_NAME="hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}"
+          go build -ldflags="-X main.version=${VERSION} -linkmode external -extldflags '-static'" -o "${BINARY_NAME}" ./cmd/hashbrown/
+          sha256sum "${BINARY_NAME}" > "${BINARY_NAME}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}
+            hashbrown-${{ matrix.goos }}-${{ matrix.goarch }}.sha256
+
+  release:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            hashbrown-*
+          generate_release_notes: true
