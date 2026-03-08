@@ -602,6 +602,11 @@ func (s *SQLiteStore) SearchKeyword(repoRoot, branch, query string, topK int) ([
 		return nil, nil
 	}
 
+	sanitizedQuery := sanitizeFTS5Query(query)
+	if sanitizedQuery == "" {
+		return nil, nil
+	}
+
 	rows, err := s.db.Query(fmt.Sprintf(`
 		SELECT
 			bc.repo_root,
@@ -619,7 +624,7 @@ func (s *SQLiteStore) SearchKeyword(repoRoot, branch, query string, topK int) ([
 		WHERE chunks_fts MATCH ? AND bc.repo_root = ? AND bc.branch = ?
 		ORDER BY rank
 		LIMIT ?
-	`, latestChunkTextLookupSQL("bc.content_hash")), query, repoRoot, branch, topK)
+	`, latestChunkTextLookupSQL("bc.content_hash")), sanitizedQuery, repoRoot, branch, topK)
 	if err != nil {
 		return nil, fmt.Errorf("search keyword query: %w", err)
 	}
@@ -1370,6 +1375,23 @@ func loadSQLiteSchemaSQL(queryer interface {
 		return "", fmt.Errorf("query sqlite_master for %s %q: %w", objectType, objectName, err)
 	}
 	return sqlDefinition.String, nil
+}
+
+// sanitizeFTS5Query wraps each whitespace-delimited token in double quotes so
+// that FTS5 special characters (hyphens, colons, asterisks, etc.) are treated
+// as literal text rather than query operators.
+func sanitizeFTS5Query(query string) string {
+	tokens := strings.Fields(query)
+	if len(tokens) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(tokens))
+	for i, token := range tokens {
+		// Escape any embedded double quotes by doubling them.
+		escaped := strings.ReplaceAll(token, `"`, `""`)
+		quoted[i] = `"` + escaped + `"`
+	}
+	return strings.Join(quoted, " ")
 }
 
 func isFTS5VirtualTableDefinition(sqlDefinition string) bool {

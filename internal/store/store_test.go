@@ -349,6 +349,58 @@ func TestSQLiteStoreSearchKeywordIsBranchScoped(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreSearchKeywordHandlesHyphensAndSpecialChars(t *testing.T) {
+	store := newTestStore(t, 4)
+
+	chunk := makeChunk("main", "parser.go", 0, "func parseTreeSitter() { // tree-sitter parser }", "treeSitter", "func parseTreeSitter()")
+	if err := store.UpsertChunks([]Chunk{chunk}, "test-model", [][]float32{{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("UpsertChunks() error = %v", err)
+	}
+
+	// Hyphenated query should not crash with "no such column"
+	results, err := store.SearchKeyword("/repo", "main", "tree-sitter", 10)
+	if err != nil {
+		t.Fatalf("SearchKeyword(tree-sitter) error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("SearchKeyword(tree-sitter) returned %d results, want 1", len(results))
+	}
+
+	// Colon in query should not be treated as column filter
+	results2, err := store.SearchKeyword("/repo", "main", "key:value", 10)
+	if err != nil {
+		t.Fatalf("SearchKeyword(key:value) error = %v", err)
+	}
+	_ = results2 // may return 0 results, but must not error
+
+	// Asterisk should not trigger prefix matching unexpectedly
+	results3, err := store.SearchKeyword("/repo", "main", "tree*", 10)
+	if err != nil {
+		t.Fatalf("SearchKeyword(tree*) error = %v", err)
+	}
+	_ = results3
+}
+
+func TestSanitizeFTS5Query(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"hello world", `"hello" "world"`},
+		{"tree-sitter", `"tree-sitter"`},
+		{`say "hello"`, `"say" """hello"""`},
+		{"", ""},
+		{"   ", ""},
+		{"single", `"single"`},
+	}
+	for _, tc := range tests {
+		got := sanitizeFTS5Query(tc.input)
+		if got != tc.want {
+			t.Errorf("sanitizeFTS5Query(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestSQLiteStoreSearchResultsIncludeContentHash(t *testing.T) {
 	store := newTestStore(t, 4)
 
