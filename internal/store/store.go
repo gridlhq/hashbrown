@@ -347,6 +347,58 @@ func (s *SQLiteStore) UpsertChunks(chunks []Chunk, modelID string, embeddings []
 	return nil
 }
 
+// TextOnlyModelID is the sentinel model ID used when chunks are stored without
+// real embeddings (BM25-only mode). The chunk text is still stored so that FTS
+// keyword search works, but no useful vector data is written.
+const TextOnlyModelID = "text-only"
+
+// UpsertChunksTextOnly stores chunk text and branch mappings for keyword (BM25)
+// search without requiring an embedding API. It writes a zero-filled embedding
+// blob to satisfy the NOT NULL schema constraint but skips vec_chunks so vector
+// search returns no results for these chunks.
+func (s *SQLiteStore) UpsertChunksTextOnly(chunks []Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	embeddingModelID, err := ensureStoreEmbeddingModelID(tx, TextOnlyModelID)
+	if err != nil {
+		return err
+	}
+
+	zeroBlob := make([]byte, s.dimensions*4)
+
+	for _, chunk := range chunks {
+		contentHash := normalize.ContentHash(chunk.Content)
+		normalizedContent := normalize.NormalizeForHash(chunk.Content)
+
+		// Insert chunk text with a zero embedding so FTS triggers can find
+		// the text. We intentionally skip vec_chunks insertion.
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO chunk_embeddings (content_hash, model_id, chunk_text, embedding, created_at)
+			VALUES (?, ?, ?, ?, datetime('now'))
+		`, contentHash, embeddingModelID, normalizedContent, zeroBlob); err != nil {
+			return fmt.Errorf("insert chunk text: %w", err)
+		}
+
+		if err := upsertBranchChunk(tx, chunk, contentHash); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	s.embeddingModelID = embeddingModelID
+	return nil
+}
+
 func (s *SQLiteStore) UpsertBranchMappings(chunks []Chunk, modelID string) error {
 	if len(chunks) == 0 {
 		return nil

@@ -27,16 +27,18 @@ var ErrBranchNotIndexed = errors.New("branch has not been indexed yet")
 
 const fileProgressInterval = 50
 
+// IndexRepo indexes all files in the repository. If embedder is nil, only
+// chunk text is stored for keyword (BM25) search — no vector embeddings are
+// computed. This allows hashbrown init to succeed without an embedding API key.
 func IndexRepo(ctx context.Context, repoRoot string, cfg *config.Config, embedder embed.Embedder, st *store.SQLiteStore, w io.Writer) error {
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
-	if embedder == nil {
-		return fmt.Errorf("embedder must not be nil")
-	}
 	if st == nil {
 		return fmt.Errorf("store must not be nil")
 	}
+
+	textOnly := embedder == nil
 
 	branch, err := repogit.CurrentBranch(repoRoot)
 	if err != nil {
@@ -79,23 +81,33 @@ func IndexRepo(ctx context.Context, repoRoot string, cfg *config.Config, embedde
 	if err != nil {
 		return fmt.Errorf("chunk files: %w", err)
 	}
-	writeProgress(w, "Indexed %d/%d files (%d chunks, %d new embeddings)\n", len(files), len(files), len(allChunks), 0)
 
-	newChunks, newTexts, existingChunks, err := partitionChunksForEmbedding(allChunks, embedder.ModelID(), st)
-	if err != nil {
-		return err
-	}
+	totalNewEmbeddings := 0
+	if textOnly {
+		writeProgress(w, "Storing %d chunks for keyword search (no embeddings)...\n", len(allChunks))
+		if err := st.UpsertChunksTextOnly(allChunks); err != nil {
+			return fmt.Errorf("store text-only chunks: %w", err)
+		}
+	} else {
+		writeProgress(w, "Indexed %d/%d files (%d chunks, %d new embeddings)\n", len(files), len(files), len(allChunks), 0)
 
-	totalNewEmbeddings := len(newChunks)
-	if err := embedBatchesConcurrently(ctx, newChunks, newTexts, embedder, st, cfg.Embedding.Concurrency); err != nil {
-		return err
-	}
+		newChunks, newTexts, existingChunks, err := partitionChunksForEmbedding(allChunks, embedder.ModelID(), st)
+		if err != nil {
+			return err
+		}
 
-	if len(existingChunks) > 0 {
-		if err := st.UpsertBranchMappings(existingChunks, embedder.ModelID()); err != nil {
-			return fmt.Errorf("store existing branch mappings: %w", err)
+		totalNewEmbeddings = len(newChunks)
+		if err := embedBatchesConcurrently(ctx, newChunks, newTexts, embedder, st, cfg.Embedding.Concurrency); err != nil {
+			return err
+		}
+
+		if len(existingChunks) > 0 {
+			if err := st.UpsertBranchMappings(existingChunks, embedder.ModelID()); err != nil {
+				return fmt.Errorf("store existing branch mappings: %w", err)
+			}
 		}
 	}
+
 	if err := pruneStaleBranchChunks(st, repoRoot, branch, fileChunkCounts); err != nil {
 		return fmt.Errorf("prune stale branch chunks: %w", err)
 	}
@@ -120,20 +132,25 @@ func IndexRepo(ctx context.Context, repoRoot string, cfg *config.Config, embedde
 		return fmt.Errorf("set file hashes: %w", err)
 	}
 
-	writeProgress(w, "Index complete: Indexed %d/%d files (%d chunks, %d new embeddings)\n", len(files), len(files), len(allChunks), totalNewEmbeddings)
+	if textOnly {
+		writeProgress(w, "Index complete (keyword-only): %d files, %d chunks\n", len(files), len(allChunks))
+	} else {
+		writeProgress(w, "Index complete: Indexed %d/%d files (%d chunks, %d new embeddings)\n", len(files), len(files), len(allChunks), totalNewEmbeddings)
+	}
 	return nil
 }
 
+// IncrementalIndexRepo updates the index for files changed since the last
+// indexed commit. If embedder is nil, text-only (BM25) mode is used.
 func IncrementalIndexRepo(ctx context.Context, repoRoot string, cfg *config.Config, embedder embed.Embedder, st *store.SQLiteStore, w io.Writer) error {
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
-	if embedder == nil {
-		return fmt.Errorf("embedder must not be nil")
-	}
 	if st == nil {
 		return fmt.Errorf("store must not be nil")
 	}
+
+	textOnly := embedder == nil
 
 	branch, err := repogit.CurrentBranch(repoRoot)
 	if err != nil {
@@ -221,21 +238,27 @@ func IncrementalIndexRepo(ctx context.Context, repoRoot string, cfg *config.Conf
 	}
 
 	if len(allChunks) > 0 {
-		newChunks, newTexts, existingChunks, err := partitionChunksForEmbedding(allChunks, embedder.ModelID(), st)
-		if err != nil {
-			return err
-		}
-
-		newEmbeddingCount = len(newChunks)
-		if err := embedBatchesConcurrently(ctx, newChunks, newTexts, embedder, st, cfg.Embedding.Concurrency); err != nil {
-			return err
-		}
-
-		if len(existingChunks) > 0 {
-			if err := st.UpsertBranchMappings(existingChunks, embedder.ModelID()); err != nil {
-				return fmt.Errorf("store existing branch mappings: %w", err)
+		if textOnly {
+			if err := st.UpsertChunksTextOnly(allChunks); err != nil {
+				return fmt.Errorf("store text-only chunks: %w", err)
 			}
-			reusedCount += len(existingChunks)
+		} else {
+			newChunks, newTexts, existingChunks, err := partitionChunksForEmbedding(allChunks, embedder.ModelID(), st)
+			if err != nil {
+				return err
+			}
+
+			newEmbeddingCount = len(newChunks)
+			if err := embedBatchesConcurrently(ctx, newChunks, newTexts, embedder, st, cfg.Embedding.Concurrency); err != nil {
+				return err
+			}
+
+			if len(existingChunks) > 0 {
+				if err := st.UpsertBranchMappings(existingChunks, embedder.ModelID()); err != nil {
+					return fmt.Errorf("store existing branch mappings: %w", err)
+				}
+				reusedCount += len(existingChunks)
+			}
 		}
 	}
 
