@@ -89,7 +89,7 @@ func estimateTextTokens(text string) int {
 	if text == "" {
 		return 0
 	}
-	return (len(text) + 3) / 4
+	return (len(text) + 2) / 3 // ~1 token per 3 chars; conservative for code
 }
 
 func reorderEmbeddingsByIndex(data []embeddingResponseItem, expectedCount int) ([][]float32, error) {

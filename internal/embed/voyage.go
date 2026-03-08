@@ -10,7 +10,7 @@ import (
 const (
 	defaultVoyageEndpoint = "https://api.voyageai.com/v1"
 	voyageMaxBatchSize    = 128
-	voyageMaxTokens       = 120000
+	voyageMaxTokens       = 100000 // 20% safety margin below Voyage's 120K hard limit
 )
 
 type VoyageEmbedder struct {
