@@ -1060,6 +1060,20 @@ func TestSearchCommandImplicitRootQueryRoutesToSearch(t *testing.T) {
 	}
 }
 
+func TestVersionSubcommandPrintsVersion(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := executeCLI([]string{"version"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("executeCLI(version) exit code = %d, want 0", exitCode)
+	}
+	output := strings.TrimSpace(stdout.String())
+	if output != version {
+		t.Fatalf("version output = %q, want %q", output, version)
+	}
+}
+
 func TestHelpCommandDoesNotRouteToSearch(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -96,6 +96,7 @@ func newRootCommand() *cobra.Command {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(versionCmd)
 
 	return rootCmd
 }
@@ -617,6 +618,14 @@ Cursor, and Windsurf. Exposes search_codebase, index_status, and reindex tools.`
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Diagnose configuration and connectivity problems",
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print the version number",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Fprintln(cmd.OutOrStdout(), version)
+	},
 }
 
 func setInitCommandDependenciesForTest(
