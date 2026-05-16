@@ -102,7 +102,7 @@ func searchHandler(st *store.SQLiteStore, embedder embed.Embedder, cfg *config.C
 		}
 
 		var buf bytes.Buffer
-		if err := search.WriteJSONResults(&buf, query, resp.Mode, resp.Results, resp.Related); err != nil {
+		if err := search.WriteJSONResults(&buf, query, resp.Mode, resp.Results, resp.Related, true); err != nil {
 			return errorResult(fmt.Sprintf("format results: %v", err)), nil, nil
 		}
 

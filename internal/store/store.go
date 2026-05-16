@@ -40,6 +40,8 @@ type SearchResult struct {
 	Language    string
 	StartLine   int
 	EndLine     int
+	Annotation  string
+	Signature   string
 	ContentHash string
 	Score       float64
 }
@@ -561,6 +563,8 @@ func (s *SQLiteStore) searchVectorWithIndex(repoRoot, branch string, query []flo
 					bc.language,
 					bc.start_line,
 					bc.end_line,
+					bc.annotation,
+					bc.signature,
 					bc.content_hash,
 					knn.distance
 				FROM (
@@ -617,6 +621,8 @@ func (s *SQLiteStore) SearchKeyword(repoRoot, branch, query string, topK int) ([
 			bc.language,
 			bc.start_line,
 			bc.end_line,
+			bc.annotation,
+			bc.signature,
 			bc.content_hash,
 			rank
 		FROM chunks_fts
@@ -646,6 +652,8 @@ func scanSearchResultRows(rows *sql.Rows) ([]SearchResult, error) {
 			&result.Language,
 			&result.StartLine,
 			&result.EndLine,
+			&result.Annotation,
+			&result.Signature,
 			&result.ContentHash,
 			&result.Score,
 		); err != nil {
@@ -1298,6 +1306,8 @@ func (s *SQLiteStore) Get1HopNeighbors(repoRoot, branch string, contentHashes []
 			bc.language,
 			bc.start_line,
 			bc.end_line,
+			bc.annotation,
+			bc.signature,
 			bc.content_hash,
 			0.0
 		FROM branch_chunks bc

@@ -39,6 +39,7 @@ var (
 	searchSemanticModeFlag  bool
 	searchJSONOutputFlag    bool
 	searchCompactOutputFlag bool
+	searchFullOutputFlag    bool
 	searchTopKFlag          int
 	searchRelatedFlag       int
 	searchNoRelatedFlag     bool
@@ -222,8 +223,14 @@ var searchCmd = &cobra.Command{
 		if err != nil {
 			return &commandExitError{code: 3, cause: err}
 		}
-		if searchJSONOutputFlag && searchCompactOutputFlag {
-			return &commandExitError{code: 3, cause: fmt.Errorf("--json and --compact cannot both be set")}
+		outputFlagCount := 0
+		for _, flagSet := range []bool{searchJSONOutputFlag, searchCompactOutputFlag, searchFullOutputFlag} {
+			if flagSet {
+				outputFlagCount++
+			}
+		}
+		if outputFlagCount > 1 {
+			return &commandExitError{code: 3, cause: fmt.Errorf("only one of --json, --compact, --full may be set")}
 		}
 
 		workingDirectory, err := os.Getwd()
@@ -320,18 +327,23 @@ var searchCmd = &cobra.Command{
 			return &commandExitError{code: 1, cause: fmt.Errorf("no results found")}
 		}
 
+		jsonIncludeContent := searchFullOutputFlag
 		switch {
 		case searchJSONOutputFlag:
-			if err := search.WriteJSONResults(cmd.OutOrStdout(), args[0], resp.Mode, resp.Results, resp.Related); err != nil {
+			if err := search.WriteJSONResults(cmd.OutOrStdout(), args[0], resp.Mode, resp.Results, resp.Related, jsonIncludeContent); err != nil {
 				return &commandExitError{code: 3, cause: fmt.Errorf("write json output: %w", err)}
 			}
 		case searchCompactOutputFlag:
 			if err := search.WriteCompactResults(cmd.OutOrStdout(), resp.Results, resp.Related); err != nil {
 				return &commandExitError{code: 3, cause: fmt.Errorf("write compact output: %w", err)}
 			}
-		default:
+		case searchFullOutputFlag:
 			if err := search.WriteHumanResults(cmd.OutOrStdout(), resp.Results, resp.Related); err != nil {
-				return &commandExitError{code: 3, cause: fmt.Errorf("write human output: %w", err)}
+				return &commandExitError{code: 3, cause: fmt.Errorf("write full output: %w", err)}
+			}
+		default:
+			if err := search.WriteCodeMapResults(cmd.OutOrStdout(), resp.Results, resp.Related); err != nil {
+				return &commandExitError{code: 3, cause: fmt.Errorf("write code map output: %w", err)}
 			}
 		}
 
@@ -900,6 +912,7 @@ func resetSearchCommandFlagState() {
 	searchSemanticModeFlag = false
 	searchJSONOutputFlag = false
 	searchCompactOutputFlag = false
+	searchFullOutputFlag = false
 	searchTopKFlag = 0
 	searchRelatedFlag = 0
 	searchNoRelatedFlag = false
@@ -938,6 +951,7 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchSemanticModeFlag, "semantic", false, "run semantic-only search")
 	searchCmd.Flags().BoolVar(&searchJSONOutputFlag, "json", false, "output results as JSON")
 	searchCmd.Flags().BoolVar(&searchCompactOutputFlag, "compact", false, "output results in compact form")
+	searchCmd.Flags().BoolVar(&searchFullOutputFlag, "full", false, "output full chunk content (old verbose format)")
 	searchCmd.Flags().IntVar(&searchTopKFlag, "top-k", 0, "maximum number of results (default: config search.top_k)")
 	searchCmd.Flags().IntVar(&searchRelatedFlag, "related", 5, "number of related results from call graph")
 	searchCmd.Flags().BoolVar(&searchNoRelatedFlag, "no-related", false, "disable graph-based related results")

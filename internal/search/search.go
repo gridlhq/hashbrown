@@ -40,6 +40,8 @@ type Result struct {
 	Language    string
 	StartLine   int
 	EndLine     int
+	Annotation  string
+	Signature   string
 	ContentHash string
 	Score       float64
 	RepoRoot    string
@@ -185,6 +187,8 @@ func RRF(vectorResults, keywordResults []store.SearchResult, k float64, topN int
 			Language:    searchResult.Language,
 			StartLine:   searchResult.StartLine,
 			EndLine:     searchResult.EndLine,
+			Annotation:  searchResult.Annotation,
+			Signature:   searchResult.Signature,
 			ContentHash: searchResult.ContentHash,
 			RepoRoot:    searchResult.RepoRoot,
 			Branch:      searchResult.Branch,
@@ -311,6 +315,8 @@ func (s *Searcher) findRelatedResults(repoRoot, branch string, mainResults []Res
 				Language:    neighbor.Language,
 				StartLine:   neighbor.StartLine,
 				EndLine:     neighbor.EndLine,
+				Annotation:  neighbor.Annotation,
+				Signature:   neighbor.Signature,
 				ContentHash: neighbor.ContentHash,
 				Score:       score,
 				RepoRoot:    neighbor.RepoRoot,
@@ -415,6 +421,8 @@ func convertStoreResults(storeResults []store.SearchResult) []Result {
 			Language:    storeResult.Language,
 			StartLine:   storeResult.StartLine,
 			EndLine:     storeResult.EndLine,
+			Annotation:  storeResult.Annotation,
+			Signature:   storeResult.Signature,
 			ContentHash: storeResult.ContentHash,
 			Score:       storeResult.Score,
 			RepoRoot:    storeResult.RepoRoot,

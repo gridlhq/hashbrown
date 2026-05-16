@@ -779,13 +779,19 @@ func findParentContext(content []byte, node *tree_sitter.Node) string {
 		}
 	}
 	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
-		if isClassLikeKind(parent.Kind()) {
-			name := signatureFromNameFallback(content, parent)
-			if name == "" {
-				continue
-			}
-			return name
+		if !isClassLikeKind(parent.Kind()) {
+			continue
 		}
+		// Skip root-level module nodes (e.g. Python's top-level "module") —
+		// they represent the file itself, not a real namespace.
+		if parent.Parent() == nil {
+			continue
+		}
+		name := signatureFromNameFallback(content, parent)
+		if name == "" {
+			continue
+		}
+		return name
 	}
 	return ""
 }

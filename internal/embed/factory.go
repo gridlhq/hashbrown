@@ -1,8 +1,10 @@
 package embed
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gridlhq/hashbrown/internal/config"
@@ -117,10 +119,52 @@ func ResolveAPIKeyEnv(provider, configuredAPIKeyEnv string) string {
 
 func requiredAPIKey(environmentVariable string) (string, error) {
 	value := os.Getenv(environmentVariable)
-	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("required embedding API key environment variable %q is empty", environmentVariable)
+	if strings.TrimSpace(value) != "" {
+		return value, nil
 	}
-	return value, nil
+	// Fall back to .secret/.env.secret, walking up from cwd.
+	if found := lookupEnvSecret(environmentVariable); found != "" {
+		return found, nil
+	}
+	return "", fmt.Errorf("required embedding API key environment variable %q is empty", environmentVariable)
+}
+
+// lookupEnvSecret walks up from cwd looking for .secret/.env.secret and
+// parses it for a KEY=value line matching the given variable name.
+func lookupEnvSecret(variable string) string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		path := filepath.Join(dir, ".secret", ".env.secret")
+		if v, ok := parseEnvFile(path, variable); ok {
+			return v
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+func parseEnvFile(path, variable string) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	prefix := variable + "="
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(line[len(prefix):]), true
+		}
+	}
+	return "", false
 }
 
 func coalesceString(value, fallback string) string {
